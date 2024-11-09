@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "$id": "ConfigurationGeneratorSchema",
+  "title": "",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "The name of the project to add the config parser setup to.",
+      "x-prompt": "What project would you like to add the config parser setup to?",
+      "x-dropdown": "projects"
+    },
+    "skipFormat": {
+      "type": "boolean",
+      "description": "Skips formatting the workspace after the generator completes.",
+      "default": false
+    }
+  },
+  "required": ["project"]
+}
