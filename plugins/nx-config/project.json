@@ -1,0 +1,54 @@
+{
+  "name": "nx-config",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "plugins/nx-config/src",
+  "projectType": "library",
+  "release": {
+    "version": {
+      "generatorOptions": {
+        "packageRoot": "dist/{projectRoot}",
+        "currentVersionResolver": "git-tag"
+      }
+    }
+  },
+  "tags": ["type:plugin", "scope:nx-config"],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:swc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/plugins/nx-config",
+        "main": "plugins/nx-config/src/index.ts",
+        "tsConfig": "plugins/nx-config/tsconfig.lib.json",
+        "assets": [
+          "plugins/nx-config/*.md",
+          {
+            "input": "./plugins/nx-config/src",
+            "glob": "**/!(*.ts)",
+            "output": "./src"
+          },
+          {
+            "input": "./plugins/nx-config/src",
+            "glob": "**/*.d.ts",
+            "output": "./src"
+          },
+          {
+            "input": "./plugins/nx-config",
+            "glob": "generators.json",
+            "output": "."
+          },
+          {
+            "input": "./plugins/nx-config",
+            "glob": "executors.json",
+            "output": "."
+          }
+        ]
+      }
+    },
+    "nx-release-publish": {
+      "options": {
+        "packageRoot": "dist/{projectRoot}"
+      }
+    }
+  }
+}
