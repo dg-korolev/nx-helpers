@@ -2,15 +2,29 @@
   "$schema": "https://json-schema.org/schema",
   "$id": "BuildExecutorSchema",
   "version": 2,
-  "title": "Build executor",
+  "title": "",
   "description": "Builds config for project.",
   "type": "object",
   "properties": {
-    "envFile": {
+    "envFileSnapshot": {
       "type": "string",
-      "description": "ENV file",
-      "default": "example.env"
+      "description": "ENV file snapshot",
+      "default": "snapshot.env"
+    },
+    "buildDependenciesSnapshot": {
+      "type": "boolean",
+      "description": "create a snapshot for dependencies. If true, a config.env will be created for each dependent package",
+      "default": false
+    },
+    "syncEnv": {
+      "type": "boolean",
+      "description": "sync env. If true, the configuration snapshot will be synchronized with the target configuration. 'envFileToSync' must be defined."
+    },
+    "envFileToSync": {
+      "type": "string",
+      "description": "ENV file snapshot to sync changes"
     }
   },
-  "required": []
+  "required": [],
+  "additionalProperties": false
 }

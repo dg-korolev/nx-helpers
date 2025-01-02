@@ -10,7 +10,19 @@
  */
 export interface BuildExecutorSchema {
   /**
-   * ENV file
+   * ENV file snapshot
    */
-  envFile?: string;
+  envFileSnapshot?: string;
+  /**
+   * create a snapshot for dependencies. If true, a config.env will be created for each dependent package
+   */
+  buildDependenciesSnapshot?: boolean;
+  /**
+   * sync env. If true, the configuration snapshot will be synchronized with the target configuration. 'envFileToSync' must be defined.
+   */
+  syncEnv?: boolean;
+  /**
+   * ENV file snapshot to sync changes
+   */
+  envFileToSync?: string;
 }

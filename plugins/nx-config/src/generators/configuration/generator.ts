@@ -8,11 +8,13 @@ export async function configurationGenerator(tree: Tree, options: ConfigurationG
     ...project,
     targets: {
       ...project.targets,
-      'generate-env': {
+      'config-generator': {
         executor: '@nx-helpers/nx-config:generate',
-        cache: false,
         options: {
-          envFile: 'example.env',
+          envFileSnapshot: 'snapshot.env',
+          buildDependenciesSnapshot: false,
+          syncEnv: false,
+          envFileToSync: 'local.env',
         },
       },
     },
