@@ -24,10 +24,28 @@ It's straightforward to setup your application:
 nx g @nx-helpers/nx-config:configuration appName
 ```
 
+Or add target at project.json:
+
+```json
+{
+  "targets": {
+    "config-generator": {
+      "executor": "@nx-helpers/nx-config:build",
+      "options": {
+        "envFileSnapshot": "snapshot.env",
+        "buildDependenciesSnapshot": false,
+        "syncEnv": true,
+        "envFileToSync": "local.env"
+      }
+    }
+  }
+}
+```
+
 We can then build our application with the following command:
 
 ```bash
-nx generate-env appName
+nx config-generator appName
 ```
 
 ## Example

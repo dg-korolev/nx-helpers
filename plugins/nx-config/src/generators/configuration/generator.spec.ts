@@ -23,7 +23,7 @@ describe('configuration generator', () => {
 
       expect(project.targets).toMatchObject({
         'config-generator': {
-          executor: '@nx-helpers/nx-config:generate',
+          executor: '@nx-helpers/nx-config:build',
           options: {
             envFileSnapshot: 'snapshot.env',
             buildDependenciesSnapshot: false,

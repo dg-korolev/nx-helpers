@@ -9,7 +9,7 @@ export async function configurationGenerator(tree: Tree, options: ConfigurationG
     targets: {
       ...project.targets,
       'config-generator': {
-        executor: '@nx-helpers/nx-config:generate',
+        executor: '@nx-helpers/nx-config:build',
         options: {
           envFileSnapshot: 'snapshot.env',
           buildDependenciesSnapshot: false,

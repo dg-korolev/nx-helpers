@@ -306,7 +306,7 @@ export class ConfigBuilder {
   buildNewEnvListWithInheritance(envKeys: string[], envList: EnvRowList): EnvRowList {
     const envListMap = new Map<string, EnvRowEnv>();
     envList.forEach((envRow) => {
-      if (envRow.type == EnvType.Env && envKeys.includes(envRow.key)) {
+      if (envRow.type == EnvType.Env) {
         envListMap.set(envRow.key, envRow);
       }
     });
@@ -315,7 +315,7 @@ export class ConfigBuilder {
     envKeys.forEach((envKey) => {
       let envRow: EnvRowEnv = null;
       if (envListMap.has(envKey)) {
-        envRow = envListMap[envKey];
+        envRow = envListMap.get(envKey);
       } else {
         envRow = {
           type: EnvType.Env,

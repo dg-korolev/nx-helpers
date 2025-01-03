@@ -165,6 +165,74 @@ describe('Build Executor', () => {
     configBuilder.build(tcOptions, testContext);
   });
 
+  it('correct for snapshots with existed snapshot file', async () => {
+    const tcOptions = {
+      envFileSnapshot: 'env/snapshot.env',
+      buildDependenciesSnapshot: true,
+    } as BuildExecutorSchema;
+    testContext.target.options = tcOptions;
+
+    const fsWrapperMock: IFsWrapper = makeBaseFsWrapperMock((baseMock) => ({
+      existsFile(filePath: string): boolean {
+        if (filePath.includes('wallet/database/' + tcOptions.envFileSnapshot)) {
+          return true;
+        }
+        return baseMock.existsFile(filePath);
+      },
+      readFile(filePath: string): Buffer {
+        if (filePath.includes('wallet/database/' + tcOptions.envFileSnapshot)) {
+          return Buffer.from('DB_HOST=\nDB_PORT=5432\nDB_USER=\nDB_PASS=\n');
+        }
+        return baseMock.readFile(filePath);
+      },
+      deleteFile(filePath: string) {
+        if (filePath.includes('wallet/database/' + tcOptions.envFileSnapshot)) {
+          return;
+        }
+        return baseMock.deleteFile(filePath);
+      },
+      writeFile(filePath: string, text: string): void {
+        if (filePath.includes('wallet/database')) {
+          expect(filePath).toEqual('libs/wallet/database/' + tcOptions.envFileSnapshot);
+          expect(text).toEqual('DB_HOST=\nDB_PORT=5432\nDB_USER=\nDB_PASS=\n');
+          return;
+        }
+        if (filePath.includes('wallet/kafka')) {
+          expect(filePath).toEqual('libs/wallet/kafka/' + tcOptions.envFileSnapshot);
+          expect(text).toEqual('APP_NAME=\nKAFKA_BROKERS=\nKAFKA_CONSUMER_BATCH_SIZE=\n');
+          return;
+        }
+        if (filePath.includes('wallet-api')) {
+          expect(filePath).toEqual('apps/wallet-api/' + tcOptions.envFileSnapshot);
+          expect(text).toEqual(
+            "# Project: 'wallet-api'\n" +
+              'APP_NAME=\n' +
+              'APP_PORT=\n' +
+              '\n' +
+              "# Project: 'wallet-database'\n" +
+              'DB_HOST=\n' +
+              'DB_PORT=5432\n' +
+              'DB_USER=\n' +
+              'DB_PASS=\n' +
+              '\n' +
+              "# Project: 'wallet-kafka'\n" +
+              'APP_NAME=\n' +
+              'KAFKA_BROKERS=\n' +
+              'KAFKA_CONSUMER_BATCH_SIZE=\n' +
+              '\n'
+          );
+          return;
+        }
+
+        expect(true).toBeFalsy();
+      },
+    }));
+
+    const configBuilder = new ConfigBuilder(fsWrapperMock);
+
+    configBuilder.build(tcOptions, testContext);
+  });
+
   it('correct for sync file', async () => {
     const tcOptions = {
       envFileToSync: 'local.env',
