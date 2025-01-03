@@ -1,4 +1,4 @@
-import { Tree, addProjectConfiguration, readProjectConfiguration } from '@nx/devkit';
+import { addProjectConfiguration, readProjectConfiguration, Tree } from '@nx/devkit';
 import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
 import { configurationGenerator } from './generator';
 import { ConfigurationGeneratorSchema } from './schema';
@@ -22,9 +22,14 @@ describe('configuration generator', () => {
       const project = readProjectConfiguration(tree, projectName);
 
       expect(project.targets).toMatchObject({
-        'generate-env': {
-          executor: '@nx-helpers/nx-config:generate',
-          cache: false,
+        'config-generator': {
+          executor: '@nx-helpers/nx-config:build',
+          options: {
+            envFileSnapshot: 'snapshot.env',
+            buildDependenciesSnapshot: false,
+            syncEnv: false,
+            envFileToSync: 'local.env',
+          },
         },
       });
     }

@@ -1,6 +1,6 @@
 {
   "name": "@nx-helpers/nx-config",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "author": "dk <korlev.dgk@gmail.com>",
   "repository": "https://github.com/dg-korolev/nx-helpers",
   "bugs": "https://github.com/dg-korolev/nx-helpers/issues",
@@ -10,6 +10,10 @@
   "typings": "./src/index.d.ts",
   "generators": "./generators.json",
   "executors": "./executors.json",
+  "scripts": {
+    "schema2ts:exec:build": "npx json2ts -i ./src/executors/build/schema.json -o ./src/executors/build/schema.d.ts",
+    "schema2ts:gen:configuration": "npx json2ts -i ./src/generators/configuration/schema.json -o ./src/generators/configuration/schema.d.ts"
+  },
   "dependencies": {
     "glob": "10.3.12"
   },

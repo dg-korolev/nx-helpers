@@ -1,295 +1,366 @@
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
-import { readFileSync } from 'fs';
 import { BuildExecutorSchema } from './schema';
 import { ExecutorContext, ProjectConfiguration, ProjectGraph } from '@nx/devkit';
-import { globSync } from 'glob';
 import { arrayUniq } from './utils';
+import {
+  EnvRowComment,
+  EnvRowEnv,
+  EnvRowList,
+  EnvRowSpace,
+  EnvType,
+  NewProjectEnvConfig,
+  ProjectEnvConfig,
+} from './types';
+import { FsWrapper, IFsWrapper } from './fsWrapper';
 
-const defaultGenerateConfigFileName = 'generated-example.env';
+const defaultExampleEnvFile = 'snapshot.env';
 
-export default async function runExecutor(options: BuildExecutorSchema, ctx?: ExecutorContext) {
-  const targetProject = ctx.projectsConfigurations.projects[ctx.projectName];
+export default async function runExecutor(options: BuildExecutorSchema, ctx: ExecutorContext) {
+  const configBuilder = new ConfigBuilder(new FsWrapper());
+  return configBuilder.build(options, ctx);
+}
 
-  const targetProjectGeneratedConfigPath = getProjectGeneratedConfigPath(targetProject);
+export class ConfigBuilder {
+  constructor(private readonly fsWrp: IFsWrapper) {}
 
-  removeFileIfExist(targetProjectGeneratedConfigPath);
+  build(options: BuildExecutorSchema, ctx: ExecutorContext) {
+    if (!options.envFileSnapshot) {
+      options.envFileSnapshot = defaultExampleEnvFile;
+    }
 
-  const projectDependenciesList = getProjectDependenciesList({
-    projectName: ctx.projectName,
-    projectGraph: ctx.projectGraph,
-  });
+    const targetProject = ctx.projectsConfigurations.projects[ctx.projectName];
 
-  if (!projectDependenciesList.length) return { success: true };
+    const targetProjectEnvConfig = this.buildProjectEnvConfig(targetProject, options);
+    const dependenciesProjectsEnvConfig = this.buildDependenciesProjectsEnvConfig(ctx, options);
+    if (options.buildDependenciesSnapshot) {
+      this.writeDependenciesSnapshot(dependenciesProjectsEnvConfig, options);
+    }
 
-  const targetProjectConfigEnvListArray: EnvList[] = [];
-
-  [
-    targetProject,
-    ...projectDependenciesList.sort().map((projectName) => ctx.projectsConfigurations.projects[projectName]),
-  ].forEach((project) => {
-    const parsedEnvKeysList = extractEnvKeysFromProject(project);
-
-    if (!parsedEnvKeysList.length) return;
-
-    const projectGeneratedConfigPath = getProjectGeneratedConfigPath(project);
-
-    const parsedEnvRowsList = parseEnvFile(projectGeneratedConfigPath);
-
-    const newEnvRowsList = assignKeysToEnvList(parsedEnvRowsList, parsedEnvKeysList);
-
-    const cleanedEnvRowsList = cleanEnvList(newEnvRowsList);
-
-    writeFileSync(projectGeneratedConfigPath, concatEnvList(cleanedEnvRowsList));
-
-    targetProjectConfigEnvListArray.push([
-      { type: 'comment', value: ` Project: '${project.name}'` },
-      ...cleanedEnvRowsList,
-    ]);
-  });
-
-  const targetProjectGeneratedConfig = targetProjectConfigEnvListArray
-    .map((envList) => concatEnvList(envList))
-    .join('\n');
-
-  writeFileSync(targetProjectGeneratedConfigPath, targetProjectGeneratedConfig);
-
-  const projectDevelopmentEnvConfigPath = getProjectDevelopmentEnvConfigPath(targetProject, options.envFile);
-
-  if (!existsSync(projectDevelopmentEnvConfigPath)) {
-    writeFileSync(projectDevelopmentEnvConfigPath, targetProjectGeneratedConfig);
-  } else {
-    const parsedKeysSet = new Set(
-      targetProjectConfigEnvListArray.reduce((acc, envList) => {
-        return acc.concat(filterEnvList(envList, 'env').map((row) => row.key));
-      }, [] as string[])
+    this.writeProjectEnvConfigToFile(
+      this.mergeTargetProjectEnvConfigWithDependency(targetProjectEnvConfig, dependenciesProjectsEnvConfig, false),
+      options.envFileSnapshot
     );
 
-    const existedEnvRowsList = parseEnvFile(projectDevelopmentEnvConfigPath).map((row) => {
-      if (row.type !== 'env') return row;
-      const isExistAtParsedKeys = parsedKeysSet.has(row.key);
-      if (isExistAtParsedKeys) return row;
-      return { type: 'comment', value: `#->${row.key}=${row.value}` } as EnvRowComment;
+    if (options.syncEnv && options.envFileToSync) {
+      this.syncConfigFile(targetProjectEnvConfig, dependenciesProjectsEnvConfig, options);
+    }
+
+    return { success: 1 };
+  }
+
+  mergeTargetProjectEnvConfigWithDependency(
+    targetProjectEnvConfig: ProjectEnvConfig,
+    dependenciesProjectsEnvConfig: ProjectEnvConfig[],
+    distinct: boolean
+  ): ProjectEnvConfig {
+    const fullEnvList: EnvRowList = [];
+    fullEnvList.push(this.buildProjectTitle(targetProjectEnvConfig.project.name), ...targetProjectEnvConfig.envList, {
+      type: EnvType.Space,
+    } as EnvRowSpace);
+    dependenciesProjectsEnvConfig.forEach((projectEnvCfg) => {
+      fullEnvList.push(this.buildProjectTitle(projectEnvCfg.project.name), ...projectEnvCfg.envList, {
+        type: EnvType.Space,
+      } as EnvRowSpace);
+    });
+    if (!distinct) {
+      return NewProjectEnvConfig(targetProjectEnvConfig.project, fullEnvList);
+    }
+
+    return NewProjectEnvConfig(targetProjectEnvConfig.project, this.distinctEnvList(fullEnvList));
+  }
+
+  distinctEnvList(envList: EnvRowList): EnvRowList {
+    const uniqEnvList: EnvRowList = [];
+    const envKeysDuplicateMap = new Map<string, boolean>();
+    envList.forEach((envRow) => {
+      if (envRow.type !== EnvType.Env) {
+        uniqEnvList.push(envRow);
+        return;
+      }
+      if (envKeysDuplicateMap.has(envRow.key)) {
+        return;
+      }
+      uniqEnvList.push(envRow);
+      envKeysDuplicateMap.set(envRow.key, true);
+    });
+    return uniqEnvList;
+  }
+
+  buildProjectEnvConfig(project: ProjectConfiguration, options: BuildExecutorSchema): ProjectEnvConfig {
+    const projectEnvList = this.buildProjectEnvList(project, options.envFileSnapshot);
+    if (projectEnvList.length > 0) {
+      return NewProjectEnvConfig(project, projectEnvList);
+    }
+    return NewProjectEnvConfig(project, []);
+  }
+
+  buildDependenciesProjectsEnvConfig(ctx: ExecutorContext, options: BuildExecutorSchema): ProjectEnvConfig[] {
+    const projectDependenciesList = this.getProjectDependenciesList({
+      projectName: ctx.projectName,
+      projectGraph: ctx.projectGraph,
     });
 
-    const existedKeysSet = new Set(filterEnvList(existedEnvRowsList, 'env').map((row) => row.key));
+    if (!projectDependenciesList.length) return [];
 
-    const targetProjectConfigEnvListMixed: EnvRowEnv[][] = [];
+    const projectDependenciesListSorted = projectDependenciesList
+      .sort()
+      .map((projectName) => ctx.projectsConfigurations.projects[projectName]);
 
-    targetProjectConfigEnvListArray.filter((projectConfigEnvList) => {
-      const envRows: EnvRowEnv[] = filterEnvList(projectConfigEnvList, 'env');
-      const notExistedEnvRows = envRows.filter((row) => !existedKeysSet.has(row.key));
-      if (notExistedEnvRows.length) targetProjectConfigEnvListMixed.push(notExistedEnvRows);
+    const projectDependenciesEnvConfig: ProjectEnvConfig[] = [];
+    projectDependenciesListSorted.forEach((project) => {
+      const projectEnvConfig = this.buildProjectEnvConfig(project, options);
+      if (projectEnvConfig.envList.length) {
+        projectDependenciesEnvConfig.push(projectEnvConfig);
+      }
+    });
+    return projectDependenciesEnvConfig;
+  }
+
+  writeDependenciesSnapshot(projectsEnvConfig: ProjectEnvConfig[], options: BuildExecutorSchema) {
+    projectsEnvConfig.forEach((projectEnvConfig) => {
+      this.writeProjectEnvConfigToFile(projectEnvConfig, options.envFileSnapshot);
+    });
+  }
+
+  writeProjectEnvConfigToFile(projectEnvConfig: ProjectEnvConfig, fileName: string) {
+    const projectEnvConfigSnapshotPath = this.getProjectConfigPath(projectEnvConfig.project, fileName);
+    this.removeFileIfExist(projectEnvConfigSnapshotPath);
+    this.fsWrp.writeFile(projectEnvConfigSnapshotPath, this.concatEnvList(projectEnvConfig.envList));
+  }
+
+  existsProjectFile(project: ProjectConfiguration, fileName: string): boolean {
+    const projectEnvConfigSnapshotPath = this.getProjectConfigPath(project, fileName);
+    return this.fsWrp.existsFile(projectEnvConfigSnapshotPath);
+  }
+
+  buildProjectTitle(projectName: string): EnvRowComment {
+    return { type: EnvType.Comment, value: ` Project: '${projectName}'` };
+  }
+
+  buildProjectEnvList(project: ProjectConfiguration, envFileSnapshot: string): EnvRowList {
+    const projectEnvKeys = this.extractProjectEnvKeys(project);
+    const projectEnvList = this.parseProjectEnvFile(project, envFileSnapshot);
+    return this.buildNewEnvListWithInheritance(projectEnvKeys, projectEnvList);
+  }
+
+  syncConfigFile(
+    targetProjectEnvConfig: ProjectEnvConfig,
+    dependenciesProjectsEnvConfig: ProjectEnvConfig[],
+    options: BuildExecutorSchema
+  ) {
+    const targetProjectMergedEnvConfig = this.mergeTargetProjectEnvConfigWithDependency(
+      targetProjectEnvConfig,
+      dependenciesProjectsEnvConfig,
+      true
+    );
+    if (!this.existsProjectFile(targetProjectEnvConfig.project, options.envFileToSync)) {
+      this.writeProjectEnvConfigToFile(targetProjectMergedEnvConfig, options.envFileToSync);
+      return;
+    }
+
+    const currentEnvList = this.parseProjectEnvFile(targetProjectMergedEnvConfig.project, options.envFileToSync);
+
+    const currentEnvValuesMap = new Map<string, string>(
+      this.filterEnvList(currentEnvList, EnvType.Env).map((envRow) => [envRow.key, envRow.value])
+    );
+
+    const mergedEnvList: EnvRowList = [];
+    targetProjectMergedEnvConfig.envList.forEach((envRow) => {
+      if (envRow.type !== EnvType.Env) {
+        mergedEnvList.push(envRow);
+        return;
+      }
+      const value = currentEnvValuesMap.has(envRow.key) ? currentEnvValuesMap.get(envRow.key) : envRow.value;
+      mergedEnvList.push({ ...envRow, value });
     });
 
-    const newTargetProjectGeneratedConfig = targetProjectConfigEnvListMixed
-      .map((envList) => [...envList, { type: 'space' } as EnvRowSpace])
-      .reduce((acc, list) => acc.concat(list), []);
-
-    const newTargetProjectGeneratedKeysSet = new Set();
-
-    const uniqNewTargetProjectGeneratedConfig = newTargetProjectGeneratedConfig.filter((row) => {
-      if (row.type !== 'env') return true;
-      if (newTargetProjectGeneratedKeysSet.has(row.key)) return false;
-      newTargetProjectGeneratedKeysSet.add(row.key);
-      return true;
+    const parsedKeysSet = new Set<string>();
+    targetProjectMergedEnvConfig.envList.forEach((envRow) => {
+      if (envRow.type == EnvType.Env) {
+        parsedKeysSet.add(envRow.key);
+      }
     });
 
-    writeFileSync(
-      projectDevelopmentEnvConfigPath,
-      concatEnvList([
-        ...cleanEnvList(existedEnvRowsList),
-        { type: 'space' } as EnvRowSpace,
-        ...cleanEnvList(uniqNewTargetProjectGeneratedConfig),
-      ])
+    const unknownEnvList: EnvRowList = [];
+    currentEnvList.forEach((envRow) => {
+      if (envRow.type === EnvType.Env && !parsedKeysSet.has(envRow.key)) {
+        unknownEnvList.push(envRow);
+      }
+    });
+    if (unknownEnvList.length) {
+      unknownEnvList.unshift({ type: EnvType.Comment, value: ' Unknown ENV' } as EnvRowComment);
+      unknownEnvList.push({ type: EnvType.Space } as EnvRowSpace);
+    }
+
+    const newEnvList = this.distinctEnvList(
+      this.cleanEnvList([...unknownEnvList, ...mergedEnvList, { type: EnvType.Space } as EnvRowSpace])
+    );
+
+    this.writeProjectEnvConfigToFile(
+      NewProjectEnvConfig(targetProjectEnvConfig.project, newEnvList),
+      options.envFileToSync
     );
   }
 
-  return { success: 1 };
-}
+  getProjectConfigPath(project: ProjectConfiguration, fileName: string): string {
+    return `${project.root}/${fileName}`;
+  }
 
-function getProjectGeneratedConfigPath(project: ProjectConfiguration): string {
-  return `${project.root}/${defaultGenerateConfigFileName}`;
-}
+  removeFileIfExist(pathToFile: string): void {
+    if (this.fsWrp.existsFile(pathToFile)) this.fsWrp.deleteFile(pathToFile);
+  }
 
-function getProjectDevelopmentEnvConfigPath(project: ProjectConfiguration, fileName: string): string {
-  return `${project.root}/${fileName}`;
-}
+  filterEnvList<
+    T extends EnvRowList[number]['type'],
+    R extends T extends EnvType.Env ? EnvRowEnv[] : T extends EnvType.Comment ? EnvRowComment[] : EnvRowSpace[]
+  >(envList: EnvRowList, type: T): R {
+    return envList.filter((row) => row.type === type) as R;
+  }
 
-function removeFileIfExist(pathToFile: string): void {
-  if (existsSync(pathToFile)) unlinkSync(pathToFile);
-}
-
-function filterEnvList<
-  T extends EnvList[number]['type'],
-  R extends T extends 'env' ? EnvRowEnv[] : T extends 'comment' ? EnvRowComment[] : EnvRowSpace[]
->(envList: EnvList, type: T): R {
-  return envList.filter((row) => row.type === type) as R;
-}
-
-function concatEnvList(envList: EnvList): string {
-  return envList.reduce((acc, envRow) => {
-    switch (envRow.type) {
-      case 'env': {
-        return acc.concat(`${envRow.key}=${envRow.value}\n`);
-      }
-      case 'comment': {
-        return acc.concat(`#${envRow.value}\n`);
-      }
-      case 'space': {
-        return acc.concat(`\n`);
-      }
-      default: {
-        throw new Error('!!!!!!!');
-      }
-    }
-  }, '');
-}
-
-function parseEnvFile(configFilePath: string): EnvList {
-  if (!existsSync(configFilePath)) return [];
-
-  const generatedExampleEnvFile = readFileSync(configFilePath).toString().trim();
-
-  if (!generatedExampleEnvFile) return [];
-
-  const parsedEnvList: EnvList = [];
-
-  generatedExampleEnvFile.split('\n').forEach((str) => {
-    const isComment = /(^|\n)\s*#.*/.test(str);
-    if (isComment) {
-      parsedEnvList.push({ type: 'comment', value: str.replace(/\s*#/g, '') });
-    } else {
-      const formattedStr = ((str: string) => {
-        const strTrim = str.trim();
-        const strArr = strTrim.split('=');
-        strArr[0] = strArr[0].replace(/\s+/g, '');
-        return strArr.join('=').replace(/=+/g, '=');
-      })(str);
-
-      if (!formattedStr) {
-        parsedEnvList.push({ type: 'space' });
-      }
-
-      const formattedSubstrings = formattedStr.split('=');
-
-      const [envKey, envValue = ''] = formattedSubstrings;
-
-      if (!envKey) return;
-
-      const isValidEnvKey = /^[A-Za-z][A-Za-z0-9_]*$/.test(envKey);
-      if (!isValidEnvKey) return;
-
-      // const isValidEnvValue = !envValue || /^[A-Za-z0-9'"_-]*$/.test(envValue);
-
-      parsedEnvList.push({ type: 'env', key: envKey, value: envValue });
-    }
-  });
-
-  return parsedEnvList;
-}
-
-function cleanEnvList(envList: EnvList): EnvList {
-  let prevLineIsEmpty = false;
-
-  return envList
-    .map((envRow) => {
-      if (envRow.type === 'comment' || envRow.type === 'env') {
-        prevLineIsEmpty = false;
-        return envRow;
-      } else {
-        if (prevLineIsEmpty) {
-          return null;
+  concatEnvList(envList: EnvRowList): string {
+    return envList.reduce((acc, envRow) => {
+      switch (envRow.type) {
+        case EnvType.Env: {
+          return acc.concat(`${envRow.key}=${envRow.value}\n`);
         }
-        prevLineIsEmpty = true;
-        return envRow;
+        case EnvType.Comment: {
+          return acc.concat(`#${envRow.value}\n`);
+        }
+        case EnvType.Space: {
+          return acc.concat(`\n`);
+        }
+        default: {
+          throw new Error('!!!!!!!');
+        }
       }
-    })
-    .filter((v) => v !== null);
-}
-
-function assignKeysToEnvList(envList: EnvList, envKeys: string[]): EnvList {
-  const envListWithoutDeletedKeys = envList.filter((envRow) => envRow.type !== 'env' || envKeys.includes(envRow.key));
-
-  const existedEnvKeys = new Set(
-    (envListWithoutDeletedKeys.filter((envRow) => envRow.type === 'env') as EnvRowEnv[]).map((envRow) => envRow.key)
-  );
-
-  const newEnvKeys = envKeys.filter((envKey) => !existedEnvKeys.has(envKey));
-
-  const newEnvRows: EnvRowEnv[] = newEnvKeys.map((envKey) => ({
-    type: 'env',
-    key: envKey,
-    value: '',
-  }));
-
-  return [...envListWithoutDeletedKeys, ...newEnvRows];
-}
-
-function extractEnvKeysFromProject(project: ProjectConfiguration): string[] {
-  const filesListToParseEnv = globSync([`${project.root}/**/*.{js,ts}`], {
-    ignore: `node_modules/**`,
-  });
-
-  const parsedEnvKeysList = arrayUniq(
-    filesListToParseEnv.reduce((acc, fileName) => {
-      const envList = extractEnvKeysFromFile(fileName);
-      return acc.concat(envList);
-    }, [])
-  );
-
-  return parsedEnvKeysList;
-}
-
-function extractEnvKeysFromFile(filePath: string): string[] {
-  const file = readFileSync(filePath).toString();
-  if (!file) return [];
-  return [...file.matchAll(/process\.env(\[(["'`])|\.)([a-zA-Z_][a-zA-Z_0-9]*)\2/g)].map((v) => v[3]);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function getAppProject(ctx?: ExecutorContext) {
-  const appTargets = Object.values(ctx.taskGraph.tasks).filter((target) => {
-    return target.projectRoot.split('/')[0] === 'apps' && target.target.target === 'generate-env';
-  });
-
-  if (appTargets.length !== 1) {
-    if (appTargets.length === 0) console.error('App not found!');
-    else console.error(`Detected app counts ${appTargets.length} not equal 1.`);
-    process.exit(1);
+    }, '');
   }
 
-  const projectRootPath = appTargets[0].projectRoot;
+  parseEnvFileByPath(configFilePath: string): EnvRowList {
+    if (!this.fsWrp.existsFile(configFilePath)) return [];
+    return this.parseEnvFile(this.fsWrp.readFile(configFilePath));
+  }
 
-  return Object.values(ctx.projectsConfigurations.projects).find((project) => project.root === projectRootPath);
+  parseProjectEnvFile(project: ProjectConfiguration, envFileName: string): EnvRowList {
+    const envFilePath = this.getProjectConfigPath(project, envFileName);
+    return this.parseEnvFileByPath(envFilePath);
+  }
+
+  parseEnvFile(buffer: Buffer): EnvRowList {
+    const fileData = buffer.toString().trim();
+
+    if (!fileData) return [];
+
+    const parsedEnvList: EnvRowList = [];
+
+    fileData.split('\n').forEach((str) => {
+      const isComment = /(^|\n)\s*#.*/.test(str);
+      if (isComment) {
+        parsedEnvList.push({ type: EnvType.Comment, value: str.replace(/\s*#/g, '') });
+      } else {
+        const formattedStr = ((str: string) => {
+          const strTrim = str.trim();
+          const strArr = strTrim.split('=');
+          strArr[0] = strArr[0].replace(/\s+/g, '');
+          return strArr.join('=').replace(/=+/g, '=');
+        })(str);
+
+        if (!formattedStr) {
+          parsedEnvList.push({ type: EnvType.Space });
+        }
+
+        const formattedSubstrings = formattedStr.split('=');
+
+        const [envKey, envValue = ''] = formattedSubstrings;
+
+        if (!envKey) return;
+
+        const isValidEnvKey = /^[A-Za-z][A-Za-z0-9_]*$/.test(envKey);
+        if (!isValidEnvKey) return;
+
+        parsedEnvList.push({ type: EnvType.Env, key: envKey, value: envValue });
+      }
+    });
+
+    return parsedEnvList;
+  }
+
+  cleanEnvList(envList: EnvRowList): EnvRowList {
+    let prevLineIsEmpty = false;
+
+    return envList
+      .map((envRow) => {
+        if (envRow.type === EnvType.Comment || envRow.type === EnvType.Env) {
+          prevLineIsEmpty = false;
+          return envRow;
+        } else {
+          if (prevLineIsEmpty) {
+            return null;
+          }
+          prevLineIsEmpty = true;
+          return envRow;
+        }
+      })
+      .filter((v) => v !== null);
+  }
+
+  buildNewEnvListWithInheritance(envKeys: string[], envList: EnvRowList): EnvRowList {
+    const envListMap = new Map<string, EnvRowEnv>();
+    envList.forEach((envRow) => {
+      if (envRow.type == EnvType.Env) {
+        envListMap.set(envRow.key, envRow);
+      }
+    });
+
+    const newEnvList: EnvRowList = [];
+    envKeys.forEach((envKey) => {
+      let envRow: EnvRowEnv = null;
+      if (envListMap.has(envKey)) {
+        envRow = envListMap.get(envKey);
+      } else {
+        envRow = {
+          type: EnvType.Env,
+          key: envKey,
+          value: '',
+        };
+      }
+      newEnvList.push(envRow);
+    });
+
+    return newEnvList;
+  }
+
+  extractProjectEnvKeys(project: ProjectConfiguration): string[] {
+    const filesListToParseEnv = this.fsWrp.getFilesByPathPattern([`${project.root}/**/*.{js,ts}`], {
+      ignore: `node_modules/**`,
+    });
+
+    const parsedEnvKeysList = arrayUniq(
+      filesListToParseEnv.sort().reduce((acc, fileName) => {
+        const envList = this.extractEnvKeysFromFile(fileName);
+        return acc.concat(envList);
+      }, [])
+    );
+
+    return parsedEnvKeysList;
+  }
+
+  extractEnvKeysFromFile(filePath: string): string[] {
+    const file = this.fsWrp.readFile(filePath).toString();
+    if (!file) return [];
+    return [...file.matchAll(/process\.env(\[(["'`])|\.)([a-zA-Z_][a-zA-Z_0-9]*)\2/g)].map((v) => v[3]);
+  }
+
+  getProjectDependenciesList(params: { projectName: string; projectGraph: ProjectGraph }) {
+    const { projectName, projectGraph } = params;
+
+    const projectDependenciesList = (projectGraph.dependencies[projectName] ?? []).filter((d) => {
+      return projectGraph.nodes[d.target];
+    });
+
+    const childProjectDependenciesList = projectDependenciesList
+      .map((pjDep) => this.getProjectDependenciesList({ projectName: pjDep.target, projectGraph }))
+      .reduce((acc, childProjectDependencies) => acc.concat(childProjectDependencies), []);
+
+    return arrayUniq([...projectDependenciesList.map((pjDep) => pjDep.target), ...childProjectDependenciesList]);
+  }
 }
-
-function getProjectDependenciesList(params: { projectName: string; projectGraph: ProjectGraph }) {
-  const { projectName, projectGraph } = params;
-
-  const projectDependenciesList = (projectGraph.dependencies[projectName] ?? []).filter((d) => {
-    return projectGraph.nodes[d.target];
-  });
-
-  const childProjectDependenciesList = projectDependenciesList
-    .map((pjDep) => getProjectDependenciesList({ projectName: pjDep.target, projectGraph }))
-    .reduce((acc, childProjectDependencies) => acc.concat(childProjectDependencies), []);
-
-  return arrayUniq([...projectDependenciesList.map((pjDep) => pjDep.target), ...childProjectDependenciesList]);
-}
-
-type EnvList = Array<EnvRowSpace | EnvRowComment | EnvRowEnv>;
-
-type EnvRowSpace = {
-  type: 'space';
-};
-
-type EnvRowComment = {
-  type: 'comment';
-  value: string;
-};
-
-type EnvRowEnv = {
-  type: 'env';
-  key: string;
-  value: string;
-};
