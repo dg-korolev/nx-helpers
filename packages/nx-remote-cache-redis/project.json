@@ -1,0 +1,32 @@
+{
+  "name": "nx-remote-cache-redis",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/nx-remote-cache-redis/src",
+  "projectType": "library",
+  "release": {
+    "version": {
+      "generatorOptions": {
+        "packageRoot": "dist/{projectRoot}",
+        "currentVersionResolver": "git-tag"
+      }
+    }
+  },
+  "tags": ["type:lib", "scope:shared"],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/packages/nx-remote-cache-redis",
+        "main": "packages/nx-remote-cache-redis/src/index.ts",
+        "tsConfig": "packages/nx-remote-cache-redis/tsconfig.lib.json",
+        "assets": ["packages/nx-remote-cache-redis/*.md"]
+      }
+    },
+    "nx-release-publish": {
+      "options": {
+        "packageRoot": "dist/{projectRoot}"
+      }
+    }
+  }
+}

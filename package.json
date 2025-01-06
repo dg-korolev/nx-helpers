@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@nx/devkit": "19.8.3",
-    "glob": "10.3.12"
+    "glob": "10.3.12",
+    "nx-remotecache-custom": "^19.0.0",
+    "redis": "^4.7.0"
   },
   "devDependencies": {
     "@commitlint/cli": "19.5.0",
@@ -35,6 +37,7 @@
     "@swc/jest": "~0.2.37",
     "@types/jest": "29.5.14",
     "@types/node": "18.19.43",
+    "@types/redis": "^4.0.11",
     "commitizen": "4.3.1",
     "dotenv": "16.4.5",
     "eslint": "^9.8.0",
@@ -50,7 +53,7 @@
     "prettier": "2.8.8",
     "ts-jest": "29.2.5",
     "ts-node": "10.9.2",
-    "tslib": "^2.3.0",
+    "tslib": "^2.6.3",
     "tsx": "^4.17.0",
     "typescript": "5.5.4",
     "typescript-eslint": "^8.0.0",

@@ -1,0 +1,18 @@
+{
+  "name": "@nx-helpers/nx-remote-cache-redis",
+  "version": "6.1.1",
+  "type": "commonjs",
+  "author": "dk <korolev.dgk@gmail.com>",
+  "repository": "https://github.com/dg-korolev/nx-helpers",
+  "bugs": "https://github.com/dg-korolev/nx-helpers/issues",
+  "license": "MIT",
+  "main": "./src/index.js",
+  "typings": "./src/index.d.ts",
+  "dependencies": {
+    "nx-remotecache-custom": "^19.0.0",
+    "redis": "^4.0.4"
+  },
+  "peerDependencies": {
+    "tslib": "^2.6.3"
+  }
+}
