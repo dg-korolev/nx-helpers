@@ -15,7 +15,7 @@
     "schema2ts:gen:configuration": "npx json2ts -i ./src/generators/configuration/schema.json -o ./src/generators/configuration/schema.d.ts"
   },
   "dependencies": {
-    "glob": "10.3.12"
+    "glob": "^10.0.0"
   },
   "peerDependencies": {
     "@nx/devkit": "^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0 || ^20.0.0",
