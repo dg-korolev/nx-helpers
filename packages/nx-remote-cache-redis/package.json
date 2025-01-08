@@ -10,9 +10,9 @@
   "typings": "./src/index.d.ts",
   "dependencies": {
     "nx-remotecache-custom": "^19.0.0",
-    "redis": "^4.0.4"
+    "redis": "^4.0.0"
   },
   "peerDependencies": {
-    "tslib": "^2.6.3"
+    "tslib": "^2.3.0"
   }
 }
