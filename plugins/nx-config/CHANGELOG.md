@@ -1,3 +1,7 @@
+## 1.0.5 (2025-01-11)
+
+This was a version bump only for nx-config to align it with other projects, there were no code changes.
+
 ## 1.0.4 (2025-01-08)
 
 This was a version bump only for nx-config to align it with other projects, there were no code changes.
