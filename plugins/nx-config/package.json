@@ -5,6 +5,13 @@
   "repository": "https://github.com/dg-korolev/nx-helpers",
   "bugs": "https://github.com/dg-korolev/nx-helpers/issues",
   "license": "MIT",
+  "keywords": [
+    "nx",
+    "nx-config",
+    "config",
+    "monorepo",
+    "monorepo-config"
+  ],
   "main": "./src/index.js",
   "type": "commonjs",
   "typings": "./src/index.d.ts",

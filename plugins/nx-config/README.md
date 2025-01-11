@@ -21,7 +21,7 @@ yarn add -D @nx-helpers/nx-config
 It's straightforward to setup your application:
 
 ```bash
-nx g @nx-helpers/nx-config:configuration appName
+nx g @nx-helpers/nx-config:configuration
 ```
 
 Or add target at project.json:
